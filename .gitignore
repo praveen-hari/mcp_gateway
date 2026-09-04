@@ -1,0 +1,37 @@
+# Environment & secrets
+.env
+.env.backup
+.env.secrets
+bridge/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Node / React
+node_modules/
+client/node_modules/
+client/dist/
+
+# Docker volumes (local)
+postgres_data/
+redis_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

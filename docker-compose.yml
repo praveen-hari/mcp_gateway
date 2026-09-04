@@ -1,0 +1,155 @@
+# ContextForge MCP Gateway - Staging Docker Compose
+# Based on IBM/mcp-context-forge (Apache 2.0)
+# Includes: PostgreSQL, Redis, ContextForge Gateway, Nginx reverse proxy
+
+services:
+  # ──────────────────────────────────────────────────────────────────
+  # PostgreSQL - Production-grade database (55+ tables)
+  # ──────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mcp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcpgateway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcpgateway_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-contextforge}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mcpgateway} -d ${POSTGRES_DB:-contextforge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────────────────────────
+  # Redis - Caching, session storage, federation
+  # ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mcp-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────────────────────────
+  # ContextForge Gateway - The centralized MCP gateway
+  # ──────────────────────────────────────────────────────────────────
+  gateway:
+    image: ghcr.io/ibm/mcp-context-forge:latest
+    container_name: mcp-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # ── Required Secrets (injected from .env) ──
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AUTH_ENCRYPTION_SECRET: ${AUTH_ENCRYPTION_SECRET}
+
+      # ── Bootstrap Admin ──
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-admin@example.com}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-admin}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD}
+
+      # ── Database (PostgreSQL) ──
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mcpgateway}:${POSTGRES_PASSWORD:-mcpgateway_secret}@postgres:5432/${POSTGRES_DB:-contextforge}
+
+      # ── Cache (Redis) ──
+      CACHE_TYPE: redis
+      REDIS_URL: redis://redis:6379/0
+
+      # ── Server Config ──
+      HOST: 0.0.0.0
+      PORT: 4444
+      ENVIRONMENT: staging
+
+      # ── Admin UI/API (restricted to internal network in production) ──
+      MCPGATEWAY_UI_ENABLED: ${MCPGATEWAY_UI_ENABLED:-true}
+      MCPGATEWAY_ADMIN_API_ENABLED: ${MCPGATEWAY_ADMIN_API_ENABLED:-true}
+
+      # ── Security ──
+      AUTH_REQUIRED: "true"
+      REQUIRE_JTI: "true"
+      REQUIRE_TOKEN_EXPIRATION: "true"
+      PUBLIC_REGISTRATION_ENABLED: "false"
+      SECURE_COOKIES: "false"  # Set true when using HTTPS
+
+      # ── SSRF Protection ──
+      SSRF_ALLOW_PRIVATE_NETWORKS: ${SSRF_ALLOW_PRIVATE_NETWORKS:-false}
+      SSRF_ALLOW_LOCALHOST: ${SSRF_ALLOW_LOCALHOST:-false}
+
+      # ── OAuth / DCR ──
+      DCR_ENABLED: "true"
+      DCR_AUTO_REGISTER_ON_MISSING_CREDENTIALS: "true"
+      OAUTH_DISCOVERY_ENABLED: "true"
+
+      # ── Teams / Multi-tenancy ──
+      AUTO_CREATE_PERSONAL_TEAMS: "true"
+      ALLOW_TEAM_CREATION: "true"
+      ALLOW_PUBLIC_VISIBILITY: "false"  # Default to team-private
+
+      # ── Observability ──
+      OTEL_ENABLE_OBSERVABILITY: ${OTEL_ENABLE_OBSERVABILITY:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4317}
+
+      # ── Performance ──
+      HEALTH_CHECK_INTERVAL: 60
+      GLOBAL_CONFIG_CACHE_TTL: 60
+
+      # ── A2A ──
+      MCPGATEWAY_A2A_ENABLED: "true"
+
+      # ── Catalog ──
+      MCPGATEWAY_CATALOG_ENABLED: "true"
+
+      # ── Skip migrations (let gateway handle it) ──
+      MCPGATEWAY_SKIP_MIGRATIONS: "false"
+
+    ports:
+      - "${GATEWAY_PORT:-4444}:4444"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────────────
+  # Nginx - Reverse proxy & caching layer
+  # ──────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: mcp-nginx
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
