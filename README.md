@@ -23,6 +23,7 @@ Centralized MCP gateway infrastructure using [IBM/mcp-context-forge](https://git
 - Docker Compose stack for staging/production deployment
 - Bridge backend mapping your tenants/users → ContextForge Teams/users
 - Client-facing API (`/api/catalog`, `/api/connections`, `/api/agent/tools`)
+- React client (`client/`) with a toolkit catalog and connection UI
 - Setup scripts for secrets, provisioning, and smoke tests
 
 ## Quick Start
@@ -113,13 +114,15 @@ mcp_gateway/
 │       ├── models.py           # SQLAlchemy models (tenant/user/connection mappings)
 │       ├── routes.py           # API endpoints (catalog, connections, agent tools)
 │       └── cf_client.py        # ContextForge API client wrapper
+├── client/                     # React + Vite client (see client/README.md)
 ├── scripts/
 │   ├── setup.sh                # One-command local setup
 │   └── register-toolkit.sh     # Register an upstream MCP server
 ├── .env.example                # Template with all required variables
 ├── .gitignore
 ├── README.md                   # This file
-└── contextforge-deployment-and-bridge-spec.md  # Full specification
+├── contextforge-deployment-and-bridge-spec.md      # Deployment & bridge specification
+└── contextforge-agent-server-integration-spec.md   # Agent/server integration specification
 ```
 
 ## Bridge Backend API
